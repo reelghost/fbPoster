@@ -4,6 +4,8 @@ Automate posting on facebook
 '''
 
 from selenium import webdriver
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
@@ -15,7 +17,8 @@ import os
 # Constants
 FACEBOOK_URL = 'https://web.facebook.com/login'
 
-
+EMAIL = ''
+PASSWORD = ''
 COOKIES_FILE_PATH = f'cookies/{EMAIL}.pkl'
 
 def save_cookies(driver, file_path):
@@ -96,7 +99,7 @@ def post(driver, p_message, media):
 def main():
     options = webdriver.ChromeOptions()
     options.add_argument('--start-maximized')
-    driver = webdriver.Chrome(options=options)
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
     driver.get('https://web.facebook.com/')
     sleep(3)  # wait for the page to load
