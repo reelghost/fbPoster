@@ -13,13 +13,44 @@ from selenium.webdriver.support.ui import WebDriverWait
 from time import sleep
 import pickle
 import os
+import glob
+import shutil
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Constants
 FACEBOOK_URL = 'https://web.facebook.com/login'
 
-EMAIL = ''
-PASSWORD = ''
+EMAIL = os.getenv('FB_EMAIL')
+PASSWORD = os.getenv('FB_PASS')
 COOKIES_FILE_PATH = f'cookies/{EMAIL}.pkl'
+
+
+def move_image_to_posted(image_path, destination_folder='images_posted'):
+    """Moves the posted image to another folder"""
+    if not os.path.exists(destination_folder):
+        os.makedirs(destination_folder)
+    # Extract the filename from the absolute path
+    filename = os.path.basename(image_path)
+    # Build the destination path
+    destination_path = os.path.join(destination_folder, filename)
+    # Move the file
+    shutil.move(image_path, destination_path)
+    print("FB - Posted Image moved to Images posted folder")
+
+
+def get_first_image_path(folder_path='post_images'):
+    """Gets the first image in the specified image folder"""
+    image_extensions = ('*.png', '*.jpg', '*.jpeg')
+    image_files = []
+    for ext in image_extensions:
+        image_files.extend(glob.glob(os.path.join(folder_path, ext)))
+    image_files.sort()
+    if image_files:
+        # Return the absolute path of the first image
+        return os.path.abspath(image_files[0])
+
 
 def save_cookies(driver, file_path):
     '''Save the cookies'''
@@ -52,6 +83,19 @@ def login_to_facebook(driver):
     except:
         pass
 
+    # check for whatsapp 2fa
+    try:
+        WebDriverWait(driver, 20).until(EC.visibility_of_element_located((By.XPATH, '//span[text()="Enter the code that we sent to your WhatsApp account."]')))
+        print("You have 2FA enabled...")
+        fa_code = input("Enter the code that we sent to whatsapp:")
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, 'input'))).send_keys(fa_code)
+        sleep(1)
+        driver.find_element(By.XPATH, '//*[contains(text(),"Continue")]').click()
+        # driver.find_element(By.XPATH, '//div[role="button"]').click()
+    except:
+        pass
+    
+
     # check for 2FA
     try:
         WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.ID, 'approvals_code')))
@@ -70,6 +114,13 @@ def login_to_facebook(driver):
         driver.find_element(By.ID, 'checkpointSubmitButton').click()
     except:
         pass
+
+    # check for trust this device prompt
+    try:
+        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.XPATH, '//*[contains(text(),"Trust this device")]'))).click()
+    except:
+        pass
+
     # TODO:Add the two checkpoints here
     WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.XPATH, '//div[@aria-label="Create a post"]'))) # wait for the login to complete
     save_cookies(driver, COOKIES_FILE_PATH)
@@ -83,7 +134,7 @@ def post(driver, p_message, media):
     # Start post dialog box
     driver.find_element(By.XPATH, '//span[contains(text(), "Photo/video")]').click()
     sleep(5)
-    post_box = driver.find_element(By.XPATH, '//div[@aria-label="What\'s on your mind, Deadbone?"]')
+    post_box = driver.find_element(By.XPATH, '//div[contains(@aria-label, \"What\'s on your mind\")]')
     post_box.send_keys(p_message)
 
     image_box = driver.find_element(By.XPATH, '//div/input[@type="file"]')
@@ -92,11 +143,13 @@ def post(driver, p_message, media):
     driver.find_element(By.XPATH, '//div[@aria-label="Next"]').click()
     sleep(1)
     driver.find_element(By.XPATH, '//div[@aria-label="Post"]').click()
-    sleep(10)
-
+    sleep(7)
     print("Your post has been posted")
+    move_image_to_posted(media)
+
 
 def main():
+    """The main function"""
     options = webdriver.ChromeOptions()
     options.add_argument('--start-maximized')
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
@@ -127,13 +180,12 @@ def main():
             pass
         sleep(5)  # wait for the page to load with cookies
 
-    # Posting
-    WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.XPATH, '//div[@aria-label="Create a post"]'))) # wait for the login to complete
+    # Posting; wait for the login to complete
+    WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.XPATH, '//div[@aria-label="Create a post"]')))
 
     post_message = "Life is like a sandwich. No matter how you flip it, the bread comes first."
-    media = "D:\githubProjects\\fbPoster\post_images\\flipit.jpeg"
+    media = get_first_image_path()
     post(driver=driver, p_message=post_message, media=media)
-    
 
     driver.quit()
 
