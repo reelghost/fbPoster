@@ -21,7 +21,7 @@ Welcome to the Facebook Video Poster script! This Python script automates the pr
 
 1. **Clone the Repository:**
     ```bash
-    git clone https://github.com/yourusername/fbPoster.git
+    git clone https://github.com/reelghost/fbPoster.git
     cd fbPoster
     ```
 
