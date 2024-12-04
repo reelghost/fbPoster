@@ -46,7 +46,7 @@ Welcome to the Facebook Video Poster script! This Python script automates the pr
 
 Run the script using Python:
 ```bash
-python facebook_video_poster.py
+python main.py
 ```
 
 On the first run, the script will log you in using your credentials and save the cookies in a file. Subsequent runs will use these cookies to log in automatically.
