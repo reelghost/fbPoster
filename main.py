@@ -1,193 +1,173 @@
-# Made by iha for iha
-'''
-Automate posting on facebook
-'''
-
-from selenium import webdriver
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from time import sleep
-import pickle
 import os
+import sys
 import glob
 import shutil
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv, set_key
+import customtkinter as ctk  # CustomTkinter for the GUI
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from time import sleep
+import utils
+import fbPoster
+
+# Load environment variables
 load_dotenv()
 
-# Constants
-FACEBOOK_URL = 'https://web.facebook.com/login'
+class FacebookPosterGUI(ctk.CTk):
+    def __init__(self):
+        super().__init__()
 
-EMAIL = os.getenv('FB_EMAIL')
-PASSWORD = os.getenv('FB_PASS')
-COOKIES_FILE_PATH = f'cookies/{EMAIL}.pkl'
-
-
-def move_image_to_posted(image_path, destination_folder='images_posted'):
-    """Moves the posted image to another folder"""
-    if not os.path.exists(destination_folder):
-        os.makedirs(destination_folder)
-    # Extract the filename from the absolute path
-    filename = os.path.basename(image_path)
-    # Build the destination path
-    destination_path = os.path.join(destination_folder, filename)
-    # Move the file
-    shutil.move(image_path, destination_path)
-    print("FB - Posted Image moved to Images posted folder")
-
-
-def get_first_image_path(folder_path='post_images'):
-    """Gets the first image in the specified image folder"""
-    image_extensions = ('*.png', '*.jpg', '*.jpeg')
-    image_files = []
-    for ext in image_extensions:
-        image_files.extend(glob.glob(os.path.join(folder_path, ext)))
-    image_files.sort()
-    if image_files:
-        # Return the absolute path of the first image
-        return os.path.abspath(image_files[0])
-
-
-def save_cookies(driver, file_path):
-    '''Save the cookies'''
-    with open(file_path, 'wb') as file:
-        pickle.dump(driver.get_cookies(), file)
-
-def load_cookies(driver, file_path):
-    '''Load the cookies'''
-    if os.path.exists(file_path):
-        with open(file_path, 'rb') as file:
-            cookies = pickle.load(file)
-            for cookie in cookies:
-                driver.add_cookie(cookie)
-        return True
-    return False
-
-def login_to_facebook(driver):
-    '''Login to facebook'''
-    driver.get(FACEBOOK_URL)
-    WebDriverWait(driver, 15).until(EC.visibility_of_element_located((By.ID, 'loginbutton')))  # wait for the page to load
-
-    driver.find_element(By.ID, 'email').send_keys(EMAIL)
-    driver.find_element(By.ID, 'pass').send_keys(PASSWORD)
-    sleep(1)
-    driver.find_element(By.ID, 'loginbutton').click()
-
-    try:
-        WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.XPATH, '//span[text()="The password you\'ve entered is incorrect."]')))
-        print("Incorrect password")
-    except:
-        pass
-
-    # check for whatsapp 2fa
-    try:
-        WebDriverWait(driver, 20).until(EC.visibility_of_element_located((By.XPATH, '//span[text()="Enter the code that we sent to your WhatsApp account."]')))
-        print("You have 2FA enabled...")
-        fa_code = input("Enter the code that we sent to whatsapp:")
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, 'input'))).send_keys(fa_code)
-        sleep(1)
-        driver.find_element(By.XPATH, '//*[contains(text(),"Continue")]').click()
-        # driver.find_element(By.XPATH, '//div[role="button"]').click()
-    except:
-        pass
-    
-
-    # check for 2FA
-    try:
-        WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.ID, 'approvals_code')))
-        print("Your account has 2FA enabled..sending text message")
+        self.title("Facebook Auto-Poster")
+        self.geometry("700x600")
         
-        try:
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//a[text()="Need another way to confirm that it\'s you?"]'))).click()
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//a[text()="Text me a login code"]'))).click()
-            sleep(1)
-            driver.find_element(By.XPATH, '//a[@data-testid="dialog_title_close_button"]').click()
-        except:
-            print("You will need to pass the 2FA manually")
-        x = input("Please enter the 2FA code sent: ")
-        driver.find_element(By.ID, 'approvals_code').send_keys(x)
-        sleep(0.5)
-        driver.find_element(By.ID, 'checkpointSubmitButton').click()
-    except:
-        pass
+        # Check if .env exists to change button behavior
+        self.env_exists = os.path.exists(".env")
 
-    # check for trust this device prompt
-    try:
-        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.XPATH, '//*[contains(text(),"Trust this device")]'))).click()
-    except:
-        pass
+        input_frame = ctk.CTkFrame(self)
+        input_frame.pack(pady=20, padx=20)
 
-    # TODO:Add the two checkpoints here
-    WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.XPATH, '//div[@aria-label="Create a post"]'))) # wait for the login to complete
-    save_cookies(driver, COOKIES_FILE_PATH)
+        # Facebook Email Label and Entry
+        email_label = ctk.CTkLabel(input_frame, text="Facebook Email:", font=("Arial", 14))
+        email_label.grid(row=0, column=0, padx=10, pady=(0, 5), sticky="w")
+        self.email_entry = ctk.CTkEntry(input_frame, width=220)
+        self.email_entry.grid(row=1, column=0, padx=10, pady=5)
 
-def post(driver, p_message, media):
-    '''
-    Post to facebook
-        p_message : What's on your mind text
-        media : An absolute path to the media to be uploaded
-    '''
-    # Start post dialog box
-    driver.find_element(By.XPATH, '//span[contains(text(), "Photo/video")]').click()
-    sleep(5)
-    post_box = driver.find_element(By.XPATH, '//div[contains(@aria-label, \"What\'s on your mind\")]')
-    post_box.send_keys(p_message)
+        # Facebook Password Label and Entry
+        password_label = ctk.CTkLabel(input_frame, text="Facebook Password:", font=("Arial", 14))
+        password_label.grid(row=0, column=1, padx=10, pady=(0, 5), sticky="w")
+        self.password_entry = ctk.CTkEntry(input_frame, width=220, show="*")
+        self.password_entry.grid(row=1, column=1, padx=10, pady=5)
 
-    image_box = driver.find_element(By.XPATH, '//div/input[@type="file"]')
-    image_box.send_keys(media) # use an absolute path
-    sleep(5)
-    driver.find_element(By.XPATH, '//div[@aria-label="Next"]').click()
-    sleep(1)
-    driver.find_element(By.XPATH, '//div[@aria-label="Post"]').click()
-    sleep(7)
-    print("Your post has been posted")
-    move_image_to_posted(media)
+        images_folder_label = ctk.CTkLabel(input_frame, text="Images Folder Path:", font=("Arial", 14))
+        images_folder_label.grid(row=2, column=0, padx=10, pady=(0, 5), sticky="w")
+        self.images_folder_entry = ctk.CTkEntry(input_frame, width=220)
+        self.images_folder_entry.grid(row=3, column=0, padx=10, pady=5)
+
+        posted_folder_label = ctk.CTkLabel(input_frame, text="Posted Images Folder Path:", font=("Arial", 14))
+        posted_folder_label.grid(row=2, column=1, padx=10, pady=(0, 5), sticky="w")
+        self.posted_folder_entry = ctk.CTkEntry(input_frame, width=220)
+        self.posted_folder_entry.grid(row=3, column=1, padx=10, pady=5)
+
+        # ctk.CTkLabel(self, text="Images Folder Path:", font=("Arial", 14)).pack(pady=5)
+        # self.images_folder_entry = ctk.CTkEntry(self, width=300)
+        # self.images_folder_entry.pack(pady=5)
+
+        # ctk.CTkLabel(self, text="Posted Images Folder Path:", font=("Arial", 14)).pack(pady=5)
+        # self.posted_folder_entry = ctk.CTkEntry(self, width=300)
+        # self.posted_folder_entry.pack(pady=5)
+
+        ctk.CTkLabel(self, text="Sleep Interval (seconds):", font=("Arial", 14)).pack(pady=5)
+        self.sleep_entry = ctk.CTkEntry(self, width=300)
+        self.sleep_entry.pack(pady=5)
+        
+        self.save_button = ctk.CTkButton(self, text="Save Settings" if not self.env_exists else "Edit Settings", command=self.save_settings)
+        self.save_button.pack(pady=20)
+
+        self.run_button = ctk.CTkButton(self, text="Run Auto-Poster", command=self.run_script)
+        self.run_button.pack(pady=10)
+
+        self.status_label = ctk.CTkLabel(self, text="", font=("Arial", 12))
+        self.status_label.pack(pady=10)
+
+        # Preload existing settings if .env exists
+        if self.env_exists:
+            self.load_settings()
+
+    def save_settings(self):
+        email = self.email_entry.get()
+        password = self.password_entry.get()
+        images_folder = self.images_folder_entry.get()
+        posted_folder = self.posted_folder_entry.get()
+        sleep_interval = self.sleep_entry.get()
+
+        # Save to .env file
+        set_key(".env", "FB_EMAIL", email)
+        set_key(".env", "FB_PASS", password)
+        set_key(".env", "IMAGES_FOLDER", images_folder)
+        set_key(".env", "POSTED_FOLDER", posted_folder)
+        set_key(".env", "SLEEP_INTERVAL", sleep_interval)
+
+        self.status_label.configure(text="Settings saved successfully!", text_color="green")
+
+    def load_settings(self):
+        self.email_entry.insert(0, os.getenv("FB_EMAIL", ""))
+        self.password_entry.insert(0, os.getenv("FB_PASS", ""))
+        self.images_folder_entry.insert(0, os.getenv("IMAGES_FOLDER", ""))
+        self.posted_folder_entry.insert(0, os.getenv("POSTED_FOLDER", ""))
+        self.sleep_entry.insert(0, os.getenv("SLEEP_INTERVAL", ""))
+    
+    def get_user_input(self, prompt):
+        """Function to get user input using a modal popup."""
+        input_window = ctk.CTkToplevel(self)
+        input_window.title("Fb Input")
+        input_window.geometry("300x200")
+        input_window.grab_set()  # Make it modal
+
+        # Label to show the prompt
+        ctk.CTkLabel(input_window, text=prompt, font=("Arial", 14)).pack(pady=10)
+
+        # Entry widget for user input
+        user_input_entry = ctk.CTkEntry(input_window, width=300)
+        user_input_entry.pack(pady=10)
+
+        # Variable to store the input
+        user_input = ctk.StringVar()
+
+        def submit():
+            user_input.set(user_input_entry.get())
+            input_window.destroy()  # Close the popup
+
+        # Button to submit input
+        ctk.CTkButton(input_window, text="Submit", command=submit).pack(pady=20)
+
+        # Wait for the input window to close
+        input_window.wait_window()
+
+        return user_input.get()  # Return the user's input
 
 
-def main():
-    """The main function"""
+    def run_script(self):
+        self.status_label.configure(text="Running the auto-poster...", text_color="blue")
+        self.update()  # Refresh GUI
+        
+        # Pass the current instance to the main function
+        import threading
+        threading.Thread(target=lambda: main(self)).start()
+        self.status_label.configure(text="Process started...", text_color="green")
+
+
+# Updated main function:
+def main(gui_instance):
+    IMAGES_FOLDER = os.getenv("IMAGES_FOLDER")
+    SLEEP_INTERVAL = int(os.getenv("SLEEP_INTERVAL"))
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    PROFILE_PATH = os.path.join(BASE_DIR, 'chrome_profile')
+
     options = webdriver.ChromeOptions()
     options.add_argument('--start-maximized')
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-geolocation")
+    options.add_argument(f"--user-data-dir={PROFILE_PATH}")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-    driver.get('https://web.facebook.com/')
-    sleep(3)  # wait for the page to load
 
-    if not load_cookies(driver, COOKIES_FILE_PATH):
-        print('Logging in and saving cookies...')
-        login_to_facebook(driver)
-    else:
-        print('Cookies loaded. Refreshing the page...')
-        driver.refresh()
-        try:
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[contains(text(), "You must log in to continue.")]')))
-            print("Logging in again")
-            login_to_facebook(driver)
-        except:
-            pass
-
-        # check for password again
-        try:
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//h2[text()="Please enter your password to continue"]')))
-            driver.find_element(By.XPATH, '//input[@type="password"]').send_keys(PASSWORD)
-            sleep(0.5)
-            driver.find_element(By.XPATH, '//input[@value="Continue"]').click()
-        except:
-            pass
-        sleep(5)  # wait for the page to load with cookies
-
-    # Posting; wait for the login to complete
-    WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.XPATH, '//div[@aria-label="Create a post"]')))
-
-    post_message = "Life is like a sandwich. No matter how you flip it, the bread comes first."
-    media = get_first_image_path()
-    post(driver=driver, p_message=post_message, media=media)
-
+    while True:  # Infinite loop
+        media = utils.get_first_image_path(IMAGES_FOLDER)
+        if media is None:
+            gui_instance.status_label.configure(text="No images found. Exiting...", text_color="red")
+            break  # Exit the loop if no images are found
+        # Facebook
+        fbPoster.fb_main(driver=driver, media=media, gui_instance=gui_instance)
+        # move image
+        utils.move_image_to_posted(media)
+        # Wait before processing the next image
+        sleep(SLEEP_INTERVAL)
+    
     driver.quit()
 
-if __name__ == '__main__':
-    main()
+
+if __name__ == "__main__":
+    app = FacebookPosterGUI()
+    app.mainloop()
