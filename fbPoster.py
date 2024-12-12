@@ -1,18 +1,27 @@
 import os
 from time import sleep
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, ElementClickInterceptedException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
 
-def post_to_fb(driver, media, gui_instance):
+def post_to_fb(driver, media, caption, gui_instance):
     """Posts to fb"""
     WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.XPATH, '//div[@aria-label="Create a post"]')))
-    driver.find_element(By.XPATH, '//span[contains(text(), "Photo/video")]').click()
-    sleep(5)
+    try:
+        driver.find_element(By.XPATH, '//span[contains(text(), "Photo/video")]').click()
+    except ElementClickInterceptedException:
+        sleep(1)
+        driver.find_element(By.XPATH, '//span[contains(text(), "Photo/video")]').click()
+        
+    sleep(3)
+    # write the post
+    post_box = driver.find_element(By.XPATH, '//div[@aria-label[contains(.,"What\'s on your mind")]]')
+    post_box.send_keys(caption)
+    sleep(1)
     image_box = driver.find_element(By.XPATH, '//div/input[@type="file"]')
-    image_box.send_keys(media) 
+    image_box.send_keys(media)
     sleep(5)
     driver.find_element(By.XPATH, '//div[@aria-label="Next"]').click()
     sleep(1)
@@ -23,10 +32,11 @@ def post_to_fb(driver, media, gui_instance):
 
 def login_to_facebook(driver, gui_instance):
     """Logins to fb if not yet logged in"""
+    gui_instance.status_label.configure(text="Posting on Facebook", text_color="green")
+    gui_instance.update()
     driver.get("https://web.facebook.com/login")
     try:
         WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@aria-label="Your profile"]')))
-        print("Already logged in")
     except TimeoutException:
         WebDriverWait(driver, 15).until(EC.visibility_of_element_located((By.ID, 'loginbutton')))
         driver.find_element(By.ID, 'email').send_keys(os.getenv('FB_EMAIL'))
@@ -65,6 +75,6 @@ def login_to_facebook(driver, gui_instance):
         # Wait for the login to complete
         WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.XPATH, '//div[@aria-label="Create a post"]')))
 
-def fb_main(driver, media, gui_instance):
+def fb_main(driver, media, caption, gui_instance):
     login_to_facebook(driver, gui_instance)
-    post_to_fb(driver, media, gui_instance)
+    post_to_fb(driver, media, caption, gui_instance)
